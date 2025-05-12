@@ -10,6 +10,8 @@ import json
 import logging
 import colorama
 from typing import Dict, List
+import pprint
+
 
 # 初始化日志配置
 colorama.init(autoreset=True)
@@ -22,9 +24,9 @@ logging.basicConfig(
 class YuKeTangAutomation:
     def __init__(self):
         # 初始化用户认证信息
-        self.csrftoken = str(input("请输入csrftoken:"))
-        self.sessionid = str(input("请输入sessionid:"))
-        self.uv_id = input("请输入uv_id(随便输入好像也可以):")
+        self.csrftoken = 'uSimT5bMrsJuvYWmljzwQNJmVBcOHO9t'
+        self.sessionid = 'elq433dfcw8k7extz58rj4xkmzw08hgi'
+        self.uv_id = '3832'
         
         # 初始化请求头
         self.headers = {
@@ -70,6 +72,14 @@ class YuKeTangAutomation:
         get_url = f"https://changjiang.yuketang.cn/video-log/get_video_watch_progress/?cid={cid}&user_id={user_id}&classroom_id={classroomid}&video_type=video&vtype=rate&video_id={video_id}&snapshot=1&term=latest&uv_id={self.uv_id}"
         progress = requests.get(url=get_url, headers=self.headers)
 
+        data: Dict = json.loads(progress.text)["data"]
+        video_length = 0
+        video_frame = 0
+
+        for v in data.values():
+            video_length = v["video_length"]
+            video_frame = v["watch_length"]        
+
         # 检查视频是否已完成
         if_completed = '0'
         try:
@@ -84,9 +94,8 @@ class YuKeTangAutomation:
             logging.info(f"《{video_name}》尚未学习，现在开始自动学习")
 
         # 视频观看进度相关参数
-        video_frame = 0
+    
         val = 0
-        learning_rate = 20
         t = time.time()
         timestap = int(round(t * 1000))
 
@@ -95,32 +104,44 @@ class YuKeTangAutomation:
 
         # 循环发送心跳请求直到视频完成
         while val != "1.0" and val != '1':
-            heart_data = self._generate_heart_data(video_frame, timestap, user_id, cid, video_id, skuid, classroomid)
+            heart_data, ts, vf = self._generate_heart_data(video_frame, timestap, user_id, cid, video_id, skuid, classroomid, video_length)
             data = {"heart_data": heart_data}
+
+            pprint.pprint(data)
+
+            while (timestap <= ts):
+                time.sleep(0.1)
+                t = time.time()
+                timestap = int(round(t * 1000))
             
             # 发送心跳请求
             r = requests.post(url=url, headers=self.headers, json=data)
             
-            # 处理异常情况
-            try:
-                error_msg = json.loads(r.text)["message"]
-                if "anomaly" in error_msg:
-                    video_frame = 0
-            except:
-                pass
+            # # 处理异常情况
+            # try:
+            #     error_msg = json.loads(r.text)["message"]
+            #     if "anomaly" in error_msg:
+            #         video_frame = 0
+            # except:
+            #     pass
 
-            try:
-                # 处理网络阻塞情况
-                delay_time = re.search(r'Expected available in(.+?)second.', r.text).group(1).strip()
-                logging.warning(f"由于网络阻塞，要阻塞{delay_time}秒")
-                time.sleep(float(delay_time) + 0.5)
-                video_frame = 0
-                logging.info("恢复工作")
-            except:
-                pass
+            # try:
+            #     # 处理网络阻塞情况
+            #     delay_time = re.search(r'Expected available in(.+?)second.', r.text).group(1).strip()
+            #     logging.warning(f"由于网络阻塞，要阻塞{delay_time}秒")
+            #     time.sleep(float(delay_time) + 0.5)
+            #     t = time.time()
+            #     timestap = int(round(t * 1000))
+            #     video_frame = 0
+            #     logging.info("恢复工作")
+            # except:
+            #     pass
 
             # 获取当前进度
             progress = requests.get(url=get_url, headers=self.headers)
+
+            pprint.pprint(progress.text)
+
             tmp_rate = re.search(r'"rate":(.+?)[,}]', progress.text)
             if tmp_rate is None:
                 return 0
@@ -129,16 +150,14 @@ class YuKeTangAutomation:
             logging.info(f"学习进度：{float(val) * 100:.1f}% (last_point: {video_frame})")
             
             # 更新参数
-            video_frame += learning_rate
-            max_time = int((time.time() + 3600) * 1000)
-            timestap = min(max_time, timestap + 1000 * 15)
-            time.sleep(0.7)
+            video_frame = vf
 
         logging.info(f"视频《{video_name}》(ID: {video_id}) 学习完成")
+        exit(-1)
         return 1
 
     def _generate_heart_data(self, video_frame: int, timestap: int, user_id: str, cid: str, 
-                            video_id: str, skuid: str, classroomid: str) -> List[Dict]:
+                            video_id: str, skuid: str, classroomid: str, video_length: float):
         """生成心跳数据
 
         Args:
@@ -153,33 +172,42 @@ class YuKeTangAutomation:
         Returns:
             List[Dict]: 心跳数据列表
         """
+        import random
         heart_data = []
-        learning_rate = 20
-        for i in range(50):
+        ret = 0
+        ret2 = 0
+        for i in range(1, 7):
+            ran = random.choice([-0.5, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4])
+            if i == 6:
+                ret = timestap + 5000 * i + ran * 1000
+                ret2 = video_frame + i * 5 + ran
             heart_data.append({
-                "i": 5,
-                "et": "loadeddata",
-                "p": "web",
-                "n": "ws",
-                "lob": "cloud4",
-                "cp": video_frame + i * learning_rate,
+                "c": cid,
+                "cards_id": 0,
+                "cc": video_id,
+                "classroomid": classroomid,
+                "cp": video_frame + i * 5 + ran,
+                "d": video_length,
+                "et": "heartbeat",
                 "fp": 0,
-                "tp": 0,
+                "i": 5,
+                "lob": "ykt",
+                "n": "ali-cdn.xuetangx.com",
+                "p": "web",
+                "pg": "32904324_18uvz",
+                "skuid": skuid,
+                "slide": 0,
                 "sp": 1,
-                "ts": str(timestap),
+                "sq": i,
+                "t": "video",
+                "tp": video_frame,
+                "ts": str(timestap + 5000 * i + ran * 1000),
                 "u": int(user_id),
                 "uip": "",
-                "c": cid,
                 "v": int(video_id),
-                "skuid": skuid,
-                "classroomid": classroomid,
-                "cc": video_id,
-                "d": 4976.5,
-                "pg": "4512143_tkqx",
-                "sq": 2,
-                "t": "video"
+                "v_url": "",
             })
-        return heart_data
+        return heart_data, ret, ret2
 
     def get_class_info(self, cid: str, video_id: str, name: str) -> None:
         """获取课程信息并观看视频
@@ -248,12 +276,15 @@ class YuKeTangAutomation:
 
         # 选择课程
         print("\n请选择要刷的课程编号：")
-        number = int(input("请输入编号："))
+        number = 1
         cid = str(course_list[number - 1]['classroom_id'])
 
         # 获取课程活动
-        url = f'https://changjiang.yuketang.cn/v2/api/web/logs/learn/{cid}?actype=-1&page=0&offset=20&sort=-1'
+        url = f'https://changjiang.yuketang.cn/v2/api/web/logs/learn/{cid}?actype=-1&page=0&offset=30&sort=-1'
         response = requests.get(url, headers=self.headers).json()
+
+        import pprint
+        pprint.pprint(response)
 
         if response['data']['prev_id'] == -1:
             logging.warning('该课程暂无内容，程序退出')
