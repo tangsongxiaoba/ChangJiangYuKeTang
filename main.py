@@ -161,13 +161,12 @@ class YuKeTangAutomation:
                 now_video: Dict = json.loads(progress.text)["data"]
                 key = list(now_video.keys())[0]
                 data = now_video[key]
+                tmp_rate = re.search(r'"rate":(.+?)[,}]', progress.text)
+                val = tmp_rate.group(1)
             except:
                 data = {"last_point": 0}
-            tmp_rate = re.search(r'"rate":(.+?)[,}]', progress.text)
-            if tmp_rate is None:
-                return 0
+                val = 0
             
-            val = tmp_rate.group(1)
             logging.info(f"学习进度：{float(val) * 100:.1f}% (last_point: {data['last_point']})")
             
             # 更新参数
