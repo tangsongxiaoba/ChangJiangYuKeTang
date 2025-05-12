@@ -24,8 +24,8 @@ logging.basicConfig(
 class YuKeTangAutomation:
     def __init__(self):
         # 初始化用户认证信息
-        self.csrftoken = 'uSimT5bMrsJuvYWmljzwQNJmVBcOHO9t'
-        self.sessionid = 'elq433dfcw8k7extz58rj4xkmzw08hgi'
+        self.csrftoken = 's6G3UV9Vpt2eMcjE2QU7tldbiUqGaBrZ'
+        self.sessionid = '6j08p0suzsts0hrbsx72xuyk03y75agr'
         self.uv_id = '3832'
         
         # 初始化请求头
@@ -78,8 +78,9 @@ class YuKeTangAutomation:
 
         for v in data.values():
             video_length = v["video_length"]
-            video_frame = v["watch_length"]        
-
+            video_frame = v["last_point"]        
+        print(f"{video_frame}")
+        print(f"{video_length}")
         # 检查视频是否已完成
         if_completed = '0'
         try:
@@ -101,21 +102,31 @@ class YuKeTangAutomation:
 
         # 心跳请求URL
         url = "https://changjiang.yuketang.cn/video-log/heartbeat/"
-
+        start = 0
         # 循环发送心跳请求直到视频完成
         while val != "1.0" and val != '1':
-            heart_data, ts, vf = self._generate_heart_data(video_frame, timestap, user_id, cid, video_id, skuid, classroomid, video_length)
+            this_type = 0 if start != 0 else 1
+            heart_data, ts, vf = self._generate_heart_data(video_frame, timestap, user_id, cid, video_id, skuid, classroomid, video_length, 0)
             data = {"heart_data": heart_data}
 
+            # pprint.pprint(data)
+            r = requests.post(url=url, headers=self.headers, json=data)
+            progress = requests.get(url=get_url, headers=self.headers)
+            try:
+                data = json.loads(progress.text)["data"]
+                key = list(now_video.keys())[0]
+                data = data[key]
+                ts = timestap + (data["last_point"] - video_frame) * 1000
+            except:
+                data = {"ult": time.time() + 2, "last_point": -1}
+                ts = time.time() * 1000 + 5000
             pprint.pprint(data)
-
             while (timestap <= ts):
                 time.sleep(0.1)
                 t = time.time()
                 timestap = int(round(t * 1000))
             
             # 发送心跳请求
-            r = requests.post(url=url, headers=self.headers, json=data)
             
             # # 处理异常情况
             # try:
@@ -131,7 +142,7 @@ class YuKeTangAutomation:
             #     logging.warning(f"由于网络阻塞，要阻塞{delay_time}秒")
             #     time.sleep(float(delay_time) + 0.5)
             #     t = time.time()
-            #     timestap = int(round(t * 1000))
+            #     timestap = int(round(t * 1000))       
             #     video_frame = 0
             #     logging.info("恢复工作")
             # except:
@@ -139,25 +150,37 @@ class YuKeTangAutomation:
 
             # 获取当前进度
             progress = requests.get(url=get_url, headers=self.headers)
-
+            try:
+                if_completed = re.search(r'"completed":(.+?),', progress.text).group(1)
+                if if_completed == '1':
+                    return 1
+            except:
+                pass
             pprint.pprint(progress.text)
-
+            try:
+                now_video: Dict = json.loads(progress.text)["data"]
+                key = list(now_video.keys())[0]
+                data = now_video[key]
+            except:
+                data = {"last_point": 0}
             tmp_rate = re.search(r'"rate":(.+?)[,}]', progress.text)
             if tmp_rate is None:
                 return 0
             
             val = tmp_rate.group(1)
-            logging.info(f"学习进度：{float(val) * 100:.1f}% (last_point: {video_frame})")
+            logging.info(f"学习进度：{float(val) * 100:.1f}% (last_point: {data['last_point']})")
             
             # 更新参数
-            video_frame = vf
+            video_frame = data["last_point"]
+            start += 1
+            time.sleep(1)
 
         logging.info(f"视频《{video_name}》(ID: {video_id}) 学习完成")
         exit(-1)
         return 1
 
-    def _generate_heart_data(self, video_frame: int, timestap: int, user_id: str, cid: str, 
-                            video_id: str, skuid: str, classroomid: str, video_length: float):
+    def _generate_heart_data(self, video_frame: int, this_timestap: int, user_id: str, cid: str, 
+                            video_id: str, skuid: str, classroomid: str, video_length: float, this_type=0):
         """生成心跳数据
 
         Args:
@@ -174,11 +197,47 @@ class YuKeTangAutomation:
         """
         import random
         heart_data = []
+        start = 0
+        timestap = this_timestap
+        ran = random.choice([-0.5, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4])
+        num = 6
+        if this_type != 0:
+            for name in ["loadstart", "loadeddata", "playing", "waiting", "playing"]:
+                heart_data.append({
+                    "c": cid,
+                    "cards_id": 0,
+                    "cc": video_id,
+                    "classroomid": classroomid,
+                    "cp": 0,
+                    "d": video_length,
+                    "et": name,
+                    "fp": 0,
+                    "i": 5,
+                    "lob": "ykt",
+                    "n": "ali-cdn.xuetangx.com",
+                    "p": "web",
+                    "pg": "32904324_18uvz",
+                    "skuid": skuid,
+                    "slide": 0,
+                    "sp": 1,
+                    "sq": start + 1,
+                    "t": "video",
+                    "tp": video_frame,
+                    "ts": str(timestap + ran * 10),
+                    "u": int(user_id),
+                    "uip": "",
+                    "v": int(video_id),
+                    "v_url": "",
+                })
+                start += 1
+                timestap += ran * 10
+            num -= 2
+
         ret = 0
         ret2 = 0
-        for i in range(1, 7):
+        for i in range(1, num + 1):
             ran = random.choice([-0.5, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4])
-            if i == 6:
+            if i == num:
                 ret = timestap + 5000 * i + ran * 1000
                 ret2 = video_frame + i * 5 + ran
             heart_data.append({
@@ -198,7 +257,7 @@ class YuKeTangAutomation:
                 "skuid": skuid,
                 "slide": 0,
                 "sp": 1,
-                "sq": i,
+                "sq": start + 1,
                 "t": "video",
                 "tp": video_frame,
                 "ts": str(timestap + 5000 * i + ran * 1000),
@@ -207,6 +266,7 @@ class YuKeTangAutomation:
                 "v": int(video_id),
                 "v_url": "",
             })
+            start += 1
         return heart_data, ret, ret2
 
     def get_class_info(self, cid: str, video_id: str, name: str) -> None:
